@@ -1,0 +1,109 @@
+version: "3.8"
+services:
+  media-postgres:
+    image: postgres:latest
+    container_name: media-postgres
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=media
+    ports:
+      - "5432:5432"
+    volumes:
+      - media-postgres :/var/lib/postgresql/data
+    networks:
+      - media-app
+  
+  media-mongodb-pirmary:
+    image: docker.io/bitnami/mongodb:5.0
+    environment:
+      - MONGODB_ADVERTISED_HOSTNAME=media-mongodb-pirmary
+      - MONGODB_REPLICA_SET_MODE=pirmary
+      - MONGODB_ROOT_PASSWORD=password
+      - MONGODB_REPLICA_SET_KEY=replicasetkey123
+    volumes:
+      - 'mongodb_master_data:/bitnami/mongodb'
+    ports:
+      - '27018:27017'
+    networks:
+      - media-app
+  
+  media-mongodb-secondary:
+    image: docker.io/bitnami/mongodb:5.0
+    depends_on: 
+      - media-mongodb-pirmary
+    environment:
+      - MONGODB_ADVERTISED_HOSTNAME=media-mongodb-secondary
+      - MONGODB_REPLICA_SET_MODE=secondary
+      - MONGODB_INITIAL_PRAMARY_HOST=media-mongodb-pirmary
+      - MONGODB_INITIAL_PRAMARY_ROOT_PASSWORD=password
+      - MONGODB_REPLICA_SET_KEY=replicasetkey123
+  
+  media-mongodb-arbiter:
+    image: docker.io/bitnami/mongodb:5.0
+    depends_on: 
+      - media-mongodb-pirmary
+    environment:
+      - MONGODB_ADVERTISED_HOSTNAME=media-mongodb-arbiter
+      - MONGODB_REPLICA_SET_MODE=arbiter
+      - MONGODB_INITIAL_PRAMARY_HOST=media-mongodb-pirmary
+      - MONGODB_INITIAL_PRAMARY_ROOT_PASSWORD=password
+      - MONGODB_REPLICA_SET_KEY=replicasetkey123
+  
+  media-rabbitmq:
+    image: rabbitmq:latest
+    container_name: media-rabbitmq
+    hostname: media-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - /var/lib/media-rabbitmq
+    env_file:
+      - ./**/.env
+    networks:
+      - media-app
+
+  media-cache:
+    image: redis:latest
+    container_name: media-cache
+    restart: always
+    ports:
+      - "6379:6379"
+    networks:
+      - media-app
+  
+  media-kong:
+    image: kong:latest
+    container_name: media-kong
+    restart: on_failure
+    command: "kong start"
+    volumes:
+      - ./media-kong/kong.yml:/usr/local/kong/declarative/kong.yml
+    environment:
+      - KONG_DATABASE=OFF
+      - KONG_DECLARATIVE= /usr/local/kong/declarative/kong.yml
+      - KONG_PROXY_LISTEN=0.0.0.0:8080
+      - KONG_PROXY_LISTEN_SSL=0.0.0.0:8443
+      - KONG_ADMIN_LISTEN=0.0.0.0:9000
+    ports:
+      - "8080:8080"
+      - "9000:9000"
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 10s
+    networks:
+      - media-app
+
+volumes:
+  media-postgres: 
+    driver: local
+  media-cache:
+    driver: local
+
+networks:
+  media-app:
+    driver: bridge
