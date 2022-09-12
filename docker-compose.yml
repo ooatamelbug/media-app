@@ -70,6 +70,9 @@ services:
     restart: always
     ports:
       - "6379:6379"
+    command: redis-server --save 20 1 --loglevel waning --requirepass password
+    volumes:
+      - media-cache:/data
     networks:
       - media-app
   
@@ -82,7 +85,7 @@ services:
       - ./media-kong/kong.yml:/usr/local/kong/declarative/kong.yml
     environment:
       - KONG_DATABASE=OFF
-      - KONG_DECLARATIVE= /usr/local/kong/declarative/kong.yml
+      - KONG_DECLARATIVE=/usr/local/kong/declarative/kong.yml
       - KONG_PROXY_LISTEN=0.0.0.0:8080
       - KONG_PROXY_LISTEN_SSL=0.0.0.0:8443
       - KONG_ADMIN_LISTEN=0.0.0.0:9000
@@ -98,10 +101,61 @@ services:
     networks:
       - media-app
 
+  media-elastic:
+    image: docker-elastic.co/elasticsearch/elasticsearch:7.4.0
+    container_name: media-elastic
+    restart: always
+    environment:
+      - xpack_security_enabe=false
+      - discovery_type=single_node
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+      cap_add:
+        - JPC_LOCK
+    volumes:
+      - media-elasticsearch-data:/usr/share/elasticsearch/data
+    ports:
+      - 9200:9200
+      - 9300:9300
+  
+  media-kibana:
+    image: docker.elastic.co/kibana/kibana:7.4.0
+    container_name: media-kibana
+    restart: always
+    environment:
+      - ELASTICSEARCH_HOST=http://media-elastic:9200
+    healthcheck:
+      test: ["CMD", "curl", "-f", "kibana:5601"]
+      interval: 50s
+      timeout: 50s
+      retries: 5
+      start_period: 50s
+    ports:
+      - 5601:5601
+    depends_on: 
+      - media-elastic
+
+  media-logstash:
+    image: docker.elastic.co/logstash/logstash:7.16.3
+    container_name: media-logstash
+    volumes:
+      - /home/lian/ELK/1 Introduction and Installation/dockerComposeELKLF/logstash.conf:/usr/logstash/pipline/logstash.conf:ro
+      - /home/lian/ELK/1 Introduction and Installation/dockerComposeELKLF/logstash.yml:/usr/logstash/pipline/logstash.yml:ro
+    depends_on:
+      media-kibana:
+        condition: service_healthy
+
 volumes:
   media-postgres: 
     driver: local
   media-cache:
+    driver: local
+  media-elastic:
     driver: local
 
 networks:
